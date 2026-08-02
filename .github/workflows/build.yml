@@ -13,10 +13,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install Xcode command line tools
+        run: |
+          sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+
       - name: Compile dylib
         run: |
+          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "SDK path: $SDK_PATH"
+          
           clang++ -dynamiclib \
             -arch arm64 \
+            -isysroot "$SDK_PATH" \
             -framework UIKit \
             -framework Foundation \
             -framework CoreGraphics \
