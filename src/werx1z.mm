@@ -1,6 +1,5 @@
 // ============================================================
-//  werx1z.mm - ПОЛНАЯ ВЕРСИЯ + АНИМАЦИЯ МЕНЮ
-//  Компиляция: clang++ -dynamiclib -arch arm64 -framework UIKit -framework CoreGraphics -framework QuartzCore -framework Foundation werx1z.mm -o werx1z.dylib
+//  werx1z.mm - ИСПРАВЛЕННАЯ ВЕРСИЯ
 // ============================================================
 
 #import <UIKit/UIKit.h>
@@ -51,7 +50,7 @@ struct Vector3 {
     float x, y, z;
 };
 
-struct PlayerData {
+typedef struct {
     uintptr_t address;
     float health;
     Vector3 position;
@@ -59,7 +58,7 @@ struct PlayerData {
     int team;
     char name[32];
     bool isAlive;
-};
+} PlayerData;
 
 // ============================================================
 //  ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
@@ -92,7 +91,7 @@ NSArray* GetPlayers() {
                 if (team >= 0 && team < 10 && team != localTeam) {
                     Vector3 pos = ReadMemory<Vector3>(addr + OFFSET_POSITION);
                     if (fabs(pos.x) < 50 && fabs(pos.z) < 50) {
-                        PlayerData *player = [[PlayerData alloc] init];
+                        PlayerData player;
                         player.address = addr;
                         player.health = health;
                         player.position = pos;
@@ -106,7 +105,7 @@ NSArray* GetPlayers() {
                         }
                         player.name[31] = '\0';
                         
-                        [players addObject:player];
+                        [players addObject:[NSValue valueWithBytes:&player objCType:@encode(PlayerData)]];
                         if (players.count > 20) break;
                     }
                 }
@@ -142,12 +141,12 @@ bool WorldToScreen(Vector3 worldPos, float* screenX, float* screenY) {
 // ============================================================
 //  SKELETON ESP
 // ============================================================
-void DrawSkeleton(CGContextRef ctx, PlayerData *player, CGColorRef color) {
+void DrawSkeleton(CGContextRef ctx, PlayerData player, CGColorRef color) {
     float headX, headY;
-    if (!WorldToScreen(player->headPosition, &headX, &headY)) return;
+    if (!WorldToScreen(player.headPosition, &headX, &headY)) return;
     
     float bodyX, bodyY;
-    Vector3 bodyPos = {player->position.x, player->position.y + 0.5f, player->position.z};
+    Vector3 bodyPos = {player.position.x, player.position.y + 0.5f, player.position.z};
     WorldToScreen(bodyPos, &bodyX, &bodyY);
     
     float height = fabs(bodyY - headY);
@@ -220,9 +219,9 @@ void DrawSkeleton(CGContextRef ctx, PlayerData *player, CGColorRef color) {
 // ============================================================
 //  CHINA HAT
 // ============================================================
-void DrawChinaHat(CGContextRef ctx, PlayerData *player) {
+void DrawChinaHat(CGContextRef ctx, PlayerData player) {
     float headX, headY;
-    if (!WorldToScreen(player->headPosition, &headX, &headY)) return;
+    if (!WorldToScreen(player.headPosition, &headX, &headY)) return;
     
     float dotY = headY - 25;
     float dotRadius = 8;
@@ -297,10 +296,14 @@ void DrawChinaHat(CGContextRef ctx, PlayerData *player) {
     if (!localPlayer || !playersCache.count) return;
     
     Vector3 localPos = ReadMemory<Vector3>(localPlayer + OFFSET_POSITION);
-    PlayerData *closestEnemy = nil;
+    PlayerData closestEnemy;
+    BOOL hasClosestEnemy = NO;
     float closestDist = INFINITY;
     
-    for (PlayerData *player in playersCache) {
+    for (NSValue *value in playersCache) {
+        PlayerData player;
+        [value getValue:&player];
+        
         float screenX, screenY;
         if (!WorldToScreen(player.position, &screenX, &screenY)) continue;
         
@@ -312,6 +315,7 @@ void DrawChinaHat(CGContextRef ctx, PlayerData *player) {
         if (dist < closestDist) {
             closestDist = dist;
             closestEnemy = player;
+            hasClosestEnemy = YES;
         }
         
         float t = fminf(dist / 120.0f, 1.0f);
@@ -373,7 +377,7 @@ void DrawChinaHat(CGContextRef ctx, PlayerData *player) {
         }
     }
     
-    if (g_silentAimEnabled && closestEnemy) {
+    if (g_silentAimEnabled && hasClosestEnemy) {
         Vector3 target = closestEnemy.headPosition;
         Vector3 localPos = ReadMemory<Vector3>(localPlayer + OFFSET_POSITION);
         
@@ -443,7 +447,7 @@ void ApplyNoSpread() {
 }
 
 // ============================================================
-//  МЕНЮ С АНИМАЦИЕЙ
+//  МЕНЮ
 // ============================================================
 @interface TweakMenuView : UIView {
     UIView *menuView;
@@ -503,10 +507,9 @@ void ApplyNoSpread() {
 }
 
 // ============================================================
-//  === АНИМАЦИЯ ПОЯВЛЕНИЯ ===
+//  === АНИМАЦИЯ ===
 // ============================================================
 - (void)showMenuWithAnimation {
-    // Меню
     menuView.transform = CGAffineTransformMakeScale(0.8, 0.8);
     menuView.alpha = 0.0;
     menuView.hidden = NO;
@@ -520,26 +523,8 @@ void ApplyNoSpread() {
         self->menuView.transform = CGAffineTransformIdentity;
         self->menuView.alpha = 1.0;
     } completion:nil];
-    
-    // Ватермарка
-    watermarkLabel.transform = CGAffineTransformMakeScale(0.9, 0.9);
-    watermarkLabel.alpha = 0.0;
-    watermarkLabel.hidden = NO;
-    
-    [UIView animateWithDuration:0.3
-                          delay:0.1
-         usingSpringWithDamping:0.8
-          initialSpringVelocity:0.5
-                        options:UIViewAnimationOptionCurveEaseOut
-                     animations:^{
-        self->watermarkLabel.transform = CGAffineTransformIdentity;
-        self->watermarkLabel.alpha = 1.0;
-    } completion:nil];
 }
 
-// ============================================================
-//  === АНИМАЦИЯ ИСЧЕЗНОВЕНИЯ ===
-// ============================================================
 - (void)hideMenuWithAnimation {
     [UIView animateWithDuration:0.25
                           delay:0
@@ -551,18 +536,6 @@ void ApplyNoSpread() {
         self->menuView.hidden = YES;
         self->menuView.transform = CGAffineTransformIdentity;
         self->menuView.alpha = 1.0;
-    }];
-    
-    [UIView animateWithDuration:0.2
-                          delay:0.05
-                        options:UIViewAnimationOptionCurveEaseIn
-                     animations:^{
-        self->watermarkLabel.transform = CGAffineTransformMakeScale(0.8, 0.8);
-        self->watermarkLabel.alpha = 0.0;
-    } completion:^(BOOL finished) {
-        self->watermarkLabel.hidden = YES;
-        self->watermarkLabel.transform = CGAffineTransformIdentity;
-        self->watermarkLabel.alpha = 1.0;
     }];
 }
 
@@ -589,11 +562,7 @@ void ApplyNoSpread() {
     titleLabel.text = @"✦ werx1z.dll";
     titleLabel.font = [UIFont fontWithName:@"CourierNewPS-BoldMT" size:18];
     titleLabel.textAlignment = NSTextAlignmentCenter;
-    [self applyGradientToLabel:titleLabel colors:@[
-        [UIColor colorWithRed:1.0 green:0.3 blue:0.58 alpha:1.0],
-        [UIColor colorWithRed:0.66 green:0.34 blue:0.97 alpha:1.0],
-        [UIColor colorWithRed:0.48 green:0.41 blue:0.93 alpha:1.0]
-    ]];
+    titleLabel.textColor = [UIColor colorWithRed:1.0 green:0.3 blue:0.58 alpha:1.0];
     [menuView addSubview:titleLabel];
     
     NSArray *labels = @[@"ESP Box", @"Silent Aim", @"No Recoil", @"No Spread", @"Skeleton", @"China Hat"];
@@ -655,26 +624,6 @@ void ApplyNoSpread() {
     [gesture setTranslation:CGPointZero inView:view.superview];
 }
 
-- (void)applyGradientToLabel:(UILabel *)label colors:(NSArray *)colors {
-    CAGradientLayer *gradient = [CAGradientLayer layer];
-    gradient.frame = label.bounds;
-    NSMutableArray *cgColors = [NSMutableArray array];
-    for (UIColor *color in colors) {
-        [cgColors addObject:(id)color.CGColor];
-    }
-    gradient.colors = cgColors;
-    gradient.startPoint = CGPointMake(0, 0.5);
-    gradient.endPoint = CGPointMake(1, 0.5);
-    gradient.locations = @[@0, @0.5, @1];
-    
-    UIGraphicsBeginImageContext(gradient.bounds.size);
-    [gradient renderInContext:UIGraphicsGetCurrentContext()];
-    UIImage *gradientImage = UIGraphicsGetImageFromCurrentImageContext();
-    UIGraphicsEndImageContext();
-    
-    label.textColor = [UIColor colorWithPatternImage:gradientImage];
-}
-
 // ============================================================
 //  ВАТЕРМАРКА
 // ============================================================
@@ -683,15 +632,10 @@ void ApplyNoSpread() {
     watermarkLabel.text = @"✦ werx1z.dll v2.4";
     watermarkLabel.font = [UIFont fontWithName:@"CourierNewPS-BoldMT" size:16];
     watermarkLabel.textAlignment = NSTextAlignmentLeft;
+    watermarkLabel.textColor = [UIColor colorWithRed:1.0 green:0.3 blue:0.58 alpha:1.0];
     watermarkLabel.layer.shadowColor = [UIColor blackColor].CGColor;
     watermarkLabel.layer.shadowRadius = 10;
     watermarkLabel.layer.shadowOpacity = 0.3;
-    [self applyGradientToLabel:watermarkLabel colors:@[
-        [UIColor colorWithRed:1.0 green:0.3 blue:0.58 alpha:1.0],
-        [UIColor colorWithRed:0.66 green:0.34 blue:0.97 alpha:1.0],
-        [UIColor colorWithRed:0.48 green:0.41 blue:0.93 alpha:1.0],
-        [UIColor colorWithRed:1.0 green:0.3 blue:0.58 alpha:1.0]
-    ]];
     
     UIBlurEffect *blur = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
     UIVisualEffectView *blurView = [[UIVisualEffectView alloc] initWithEffect:blur];
@@ -714,25 +658,10 @@ void ApplyNoSpread() {
 - (void)animateWatermark {
     static float phase = 0;
     phase += 0.02;
-    
-    CAGradientLayer *gradient = [CAGradientLayer layer];
-    gradient.frame = watermarkLabel.bounds;
-    gradient.colors = @[
-        (id)[UIColor colorWithRed:1.0 green:0.3 blue:0.58 alpha:1.0].CGColor,
-        (id)[UIColor colorWithRed:0.66 green:0.34 blue:0.97 alpha:1.0].CGColor,
-        (id)[UIColor colorWithRed:0.48 green:0.41 blue:0.93 alpha:1.0].CGColor,
-        (id)[UIColor colorWithRed:1.0 green:0.3 blue:0.58 alpha:1.0].CGColor
-    ];
-    gradient.startPoint = CGPointMake(0.3 + 0.7 * sinf(phase), 0.5);
-    gradient.endPoint = CGPointMake(0.7 + 0.7 * sinf(phase + 1.5), 0.5);
-    gradient.locations = @[@0, @0.33, @0.66, @1];
-    
-    UIGraphicsBeginImageContext(gradient.bounds.size);
-    [gradient renderInContext:UIGraphicsGetCurrentContext()];
-    UIImage *gradientImage = UIGraphicsGetImageFromCurrentImageContext();
-    UIGraphicsEndImageContext();
-    
-    watermarkLabel.textColor = [UIColor colorWithPatternImage:gradientImage];
+    float r = 0.5 + 0.5 * sinf(phase);
+    float g = 0.5 + 0.5 * sinf(phase + 1.5);
+    float b = 0.5 + 0.5 * sinf(phase + 3.0);
+    watermarkLabel.textColor = [UIColor colorWithRed:r green:g * 0.5 blue:b alpha:1.0];
 }
 
 // ============================================================
