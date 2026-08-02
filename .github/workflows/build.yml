@@ -1,1 +1,31 @@
+name: Build iOS dylib
 
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Compile dylib
+        run: |
+          clang++ -dynamiclib \
+            -arch arm64 \
+            -framework UIKit \
+            -framework Foundation \
+            -framework CoreGraphics \
+            -framework QuartzCore \
+            -o werx1z.dylib \
+            src/werx1z.mm
+
+      - name: Upload dylib
+        uses: actions/upload-artifact@v4
+        with:
+          name: werx1z-dylib
+          path: werx1z.dylib
